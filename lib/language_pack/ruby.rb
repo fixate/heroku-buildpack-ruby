@@ -94,6 +94,7 @@ class LanguagePack::Ruby < LanguagePack::Base
         create_database_yml
         install_binaries
         run_assets_precompile_rake_task
+        run_db_migrate_rake_task
       end
       super
     end
@@ -696,6 +697,32 @@ params = CGI.parse(uri.query || "")
   # @return [Boolean] true if it's detected and false if it isn't
   def node_js_installed?
     @node_js_installed ||= run("#{node_bp_bin_path}/node -v") && $?.success?
+  end
+
+  def run_db_migrate_rake_task
+    instrument 'ruby.run_db_migrate_rake_task' do
+
+      migrate = rake.task("db:migrate")
+      return true unless migrate.is_defined?
+
+      topic "Migrating database"
+      migrate.invoke(env: rake_env)
+      if migrate.success?
+        puts "Database migration completed (#{"%.2f" % migrate.time}s)"
+      else
+        migrate_fail(migrate.output)
+      end
+    end
+  end
+
+  def migrate_fail(output)
+    log "db_migrate", :status => "failure"
+    msg = "Database migration failed.\n"
+    if output.match(/(127\.0\.0\.1)|(org\.postgresql\.util)/)
+      msg << "Attempted to access a nonexistent database:\n"
+      msg << "https://devcenter.heroku.com/articles/pre-provision-database\n"
+    end
+    error msg
   end
 
   def run_assets_precompile_rake_task
